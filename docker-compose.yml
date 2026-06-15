@@ -1,0 +1,96 @@
+services:
+  db:
+    image: postgres:14
+    container_name: write-db
+
+    environment:
+      POSTGRES_DB: write_db
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+
+    ports:
+      - "5440:5432"
+
+    volumes:
+      - ./sql/write_schema.sql:/docker-entrypoint-initdb.d/write_schema.sql
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d write_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  read-db:
+    image: postgres:14
+    container_name: read-db
+
+    environment:
+      POSTGRES_DB: read_db
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+
+    ports:
+      - "5441:5432"
+
+    volumes:
+      - ./sql/read_schema.sql:/docker-entrypoint-initdb.d/read_schema.sql
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d read_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  command-service:
+    build:
+      context: ./command-service
+
+    container_name: command-service
+
+    ports:
+      - "8090:8080"
+
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  consumer-service:
+    build:
+      context: ./consumer-service
+
+    container_name: consumer-service
+
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      read-db:
+        condition: service_healthy
+
+  query-service:
+    build:
+      context: ./query-service
+
+    container_name: query-service
+
+    ports:
+      - "8091:8081"
+
+    depends_on:
+      read-db:
+        condition: service_healthy
